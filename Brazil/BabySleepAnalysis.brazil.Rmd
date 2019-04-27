@@ -4,17 +4,18 @@ author: "Caspar Addyman"
 output: html_notebook
 ---
 
-This notebook contains the `R` code to load and process data from 10 day sleep survey conducted in Sao Paulo, Brazil in June 2015. In collaboration with Procter & Gamble.  
+This notebook contains the `R` code to load and process data from 10 day sleep survey conducted in Sao Paulo, Brazil in June 2015. In collaboration with Procter & Gamble.
 
-Note: 
-In this directory there are synchronised RMarkdown (`.Rmd`) and Jupyter/IPython (`.ipynb`) versions of this document. We create the Jupyter version by using the python package `notedown` with the following command: 
+Note:
+In this directory there are synchronised RMarkdown (`.Rmd`) and Jupyter/IPython (`.ipynb`) versions of this document. We create the Jupyter version by using the python package `notedown` with the following command:
 
 ```
 notedown input.Rmd --knit > output.ipynb
 ```
 ## R Libraries
 
-These are the libraries we use and 
+These are the libraries we use and we use `checkpoint` to fix all their versions to the MRAN snapshot for 1st Feb 2019.
+
 ```{r libraries, include = TRUE}
 library(checkpoint)
 checkpoint("2019-02-01")
@@ -27,11 +28,13 @@ library(dplyr)
 library(corrgram)
 library(gridExtra)
 library(leaps)
-library(MASS) 
+library(MASS)
 library(glmulti)
 ```
 
-## Loading the data
+## Loading & recoding the data
+
+We classify babies who were in absorbent and ordinary diapers and we calculate the scores for the IBQ-R (Rothbart et al, 2003).
 
 ```{r load-data}
 #load data
@@ -39,11 +42,12 @@ dataset = read_sav("10DAY BABY SLEEP SURVEY.sav")
 
 #sleeping in pampers?
 dataset$PAMPERS<- ifelse(dataset$Q33_NOITE == "PAMPERS", "PAMPERS", "OTHER")
+#sleeping in more absorbent premium brand (pamers or turm da monica)?
 dataset$PREMIUMORIG<-ifelse((dataset$Q33_NOITE == "PAMPERS" | dataset$Q33_NOITE == "TURMA DA MONICA"),"ABSORBENT","ORDINARY")
 dataset$PREMIUM<-ifelse((dataset$Q33_NOITE == "PAMPERS" | dataset$Q33_NOITE == "TURMA DA MONICA" | dataset$Q33_NOITE == "MAMY POKO"),"ABSORBENT","ORDINARY")
 
-#Infant behaviour questionnaire scores
-dataset$Q31_11r <- (8-dataset$Q31_11) 
+#Infant behaviour questionnaire scores (IBQ-R)
+dataset$Q31_11r <- (8-dataset$Q31_11)
 #which columns count for which list?
 surglist = c('Q31_1','Q31_2','Q31_7','Q31_8','Q31_13','Q31_14','Q31_15','Q31_20','Q31_21','Q31_26','Q31_27','Q31_36','Q31_37')
 neglist = c('Q31_3','Q31_4','Q31_9','Q31_10','Q31_16','Q31_17','Q31_22','Q31_23','Q31_28','Q31_29','Q31_32','Q31_33')
@@ -51,28 +55,36 @@ efflist = c('Q31_5','Q31_6','Q31_11r','Q31_12','Q31_18','Q31_19','Q31_24','Q31_2
 dataset$SURGENCY <- rowMeans(dataset[,surglist],na.rm=TRUE)
 dataset$NEG_AFFECT <- rowMeans(dataset[,neglist],na.rm=TRUE)
 dataset$EFFORTFUL <- rowMeans(dataset[,efflist],na.rm=TRUE)
+```
 
-
+```{r ages}
 #baby ages
 surveyStartDate <-as.Date('20/06/2015',format='%d/%m/%Y')
 dob<-paste(dataset$Q9_DIA,dataset$Q9_MES,dataset$Q9_ANO, sep='/')
 dataset$DOB<-as.Date(dob,format='%d/%m/%Y')
 dataset$DaysOld <- as.integer(surveyStartDate-dataset$DOB)
 dataset$OverOne <- dataset$DaysOld>365
+```
 
+```{r unique}
 #Isolate the header info.
 datahead <- dataset[,c(1:223,245:254)]
 #one unique row per baby
 datahead <- unique(datahead)
+```
+## Sleeping times
+
+Next we
+```{r sleeptimes}
 
 lengthsleep<-function(sleep, wake){
   #how long did baby sleep
-  sleeptime <- wake - sleep 
+  sleeptime <- wake - sleep
   if (sleeptime < 0){
     #sleep time less that zero we add 24hours
-    sleeptime<- sleeptime +  24*60*60  #1day     
-  } 
-  return (sleeptime)  
+    sleeptime<- sleeptime +  24*60*60  #1day
+  }
+  return (sleeptime)
 }
 
 #who went to bed early?
@@ -85,11 +97,13 @@ dataset$relativebedtime[dataset$relativebedtime >14] <- NA
 
 dataset$bedrelativetomidnight <- 6 - dataset$relativebedtime
 #how long did they sleep?
-dataset$secondssleep <- mapply(lengthsleep, dataset$D_Q1_DORMIR,dataset$D_Q2_ACORDAR)  
+dataset$secondssleep <- mapply(lengthsleep, dataset$D_Q1_DORMIR,dataset$D_Q2_ACORDAR)
 dataset$hourssleep <- dataset$secondssleep /3600
-#exlcude very long sleep - probably data errors
+#exlcude very long or short sleep - probably data errors
 dataset$hourssleep[dataset$hourssleep >16] <- NA
 dataset$hourssleep[dataset$hourssleep < 5] <- NA
+```
+```{r relabel-diary}
 #set up nicely labelled, numeric versions of diary questions
 dataset$numwakes<-as.numeric(as.character(dataset$D_Q3))
 dataset$nightfeed<-as.factor(as.character(dataset$D_Q5))
@@ -100,13 +114,9 @@ dataset$numwakes[dataset$numwakes >7] <- NA
 dataset$happiness<-as.numeric(dataset$D_Q11)
 dataset$energy<-as.numeric(dataset$D_Q12)
 dataset$giggles<-as.numeric(dataset$D_Q13)
+```
 
-
-
-#write.xlsx(dataset, 'pampers.WIN.xlsx')
-#write.xlsx(datahead, 'pampers.head.WIN.xlsx')
-#night<-table((datahead$Q33_NOITE))
-
+```{r averages}
 #calculate averages for each baby..
 #average sleep?
 dt <- aggregate(hourssleep ~ ID,FUN = mean, data=dataset)
@@ -131,7 +141,9 @@ datahead<-left_join(x = datahead, y = dt, by = "ID")
 dt <- aggregate(D_Q13 ~ ID,FUN = mean, data=dataset)
 names(dt)[2]<-'giggly'
 datahead<-left_join(x = datahead, y = dt, by = "ID")
+```
 
+```{r data-by-diaper}
 aggregate(hourssleep ~ PAMPERS, FUN=mean, data=datahead)
 aggregate(numwakes ~ PAMPERS, FUN=mean, data=datahead)
 aggregate(happiness ~ PAMPERS, FUN=mean, data=datahead)
@@ -140,6 +152,9 @@ aggregate(energy ~ PAMPERS, FUN=mean, data=datahead)
 aggregate(hourssleep ~ PREMIUM, FUN=mean, data=dataset)
 aggregate(hourssleep ~ PREMIUMORIG, FUN=mean, data=dataset)
 t.test(hourssleep ~ PREMIUM,data = dataset)
+```
+
+```{r}
 cor(dataset$hourssleep,dataset$happiness,use = "pairwise.complete.obs")
 cor.test(dataset$hourssleep,dataset$happiness,use = "pairwise.complete.obs")
 
@@ -178,7 +193,7 @@ aggregate(energy ~ Q13, FUN=mean, data=datahead)
 aggregate(giggly ~ Q13, FUN=mean, data=datahead)
 wheresleep<-aggregate(cbind(DaysOld,hourssleep,numwakes,happiness,energy,giggly) ~ Q13, FUN=mean, data=datahead)
 #write.xlsx(wheresleep, 'pampers.wheresleep.xlsx')
-    
+
 #Q27 - sleep problems?
 aggregate(hourssleep ~ Q27, FUN=mean, data=dataset)
 aggregate(happiness ~ Q27, FUN=mean, data=dataset)
@@ -198,11 +213,11 @@ g1<-ggplot(datahead,aes(hourssleep))
     + xlim(c(4,14))
     + xlab("Hours sleep per night")
     + ggtitle("Average hours sleep")
-    + facet_grid(PREMIUM~.) 
+    + facet_grid(PREMIUM~.)
     + theme(legend.position = "none",
             strip.text.y=element_text(size = 24),
             axis.title.y=element_blank(),
-            axis.ticks = element_blank(), 
+            axis.ticks = element_blank(),
             axis.text.y = element_blank(),
             axis.text=element_text(size=24),
             axis.title=element_text(size=18))
@@ -222,11 +237,11 @@ ggsave("hourssleep.png", plot = g1, height = 4, width = 6)
   + geom_density(alpha=.3)
   + xlim(c(1,10))
   + xlab("Happiness")
-  + facet_grid(PREMIUM~.) 
+  + facet_grid(PREMIUM~.)
   + theme(legend.position = "none",
         strip.text.y=element_text(size = 24),
         axis.title.y=element_blank(),
-        axis.ticks = element_blank(), 
+        axis.ticks = element_blank(),
         axis.text.y = element_blank(),
         axis.text=element_text(size=24),
         axis.title=element_text(size=18))
@@ -239,11 +254,11 @@ ggsave("hourssleep.png", plot = g1, height = 4, width = 6)
 + geom_density(alpha=.3)
 + xlim(c(1,10))
 + xlab("Energy")
-+ facet_grid(PREMIUM~.) 
++ facet_grid(PREMIUM~.)
 + theme(legend.position = "none",
         strip.text.y=element_text(size = 24),
         axis.title.y=element_blank(),
-        axis.ticks = element_blank(), 
+        axis.ticks = element_blank(),
         axis.text.y = element_blank(),
         axis.text=element_text(size=24),
         axis.title=element_text(size=18))
@@ -288,7 +303,7 @@ ggplot(dataset,aes(happiness, fill = over8)) +
   theme(legend.position = "none",
         strip.text.y=element_text(size = 24),
         axis.title.y=element_blank(),
-        axis.ticks = element_blank(), 
+        axis.ticks = element_blank(),
         axis.text.y = element_blank(),
         axis.text=element_text(size=18),
         axis.title=element_text(size=18))
@@ -306,7 +321,7 @@ ggplot(dataset,aes(energy, fill = over82)) +
   theme(legend.position = "none",
         strip.text.y=element_text(size = 24),
         axis.title.y=element_blank(),
-        axis.ticks = element_blank(), 
+        axis.ticks = element_blank(),
         axis.text.y = element_blank(),
         axis.text=element_text(size=18),
         axis.title=element_text(size=18))
@@ -339,14 +354,14 @@ cor.test(dataset$hourssleep,dataset$bedrelativetomidnight,use = "pairwise.comple
 ggplot(dataset,aes(hourssleep,happiness)) +
   aes(color=as.factor(PREMIUM)) +
   geom_smooth(method=lm,size=1.5) +
-  facet_grid(.~PREMIUM) + 
+  facet_grid(.~PREMIUM) +
   xlab("Hours of sleep") + ylab("Happiness score") +
   theme(legend.position = "none")
 
 ggplot(dataset,aes(hourssleep,energy)) +
   aes(color=as.factor(PREMIUM)) +
   geom_smooth(method=lm,size=1.5) +
-  facet_grid(.~PREMIUM) + 
+  facet_grid(.~PREMIUM) +
   xlab("Hours of sleep") + ylab("Energy score") +
   theme(legend.position = "none")
 
@@ -360,22 +375,22 @@ ggplot(dataset,aes(numwakes,energy)) +
   geom_smooth(method=lm,size=1.5) +
   xlab("Number of wakes") + ylab("Energy score") +
   theme(legend.position = "none")
-    
-    
+
+
     p1<-ggplot(dataset,aes(DaysOld,hourssleep)) +
       geom_smooth(method=lm,size=1.5) +
       xlab("Age (days)") + ylab("Hours sleep") +
       ggtitle("Hours sleep") +
       theme(legend.position ="none",
             axis.title.y = element_blank())
-    
+
     p2<-ggplot(dataset,aes(DaysOld,numwakes)) +
       geom_smooth(method=lm,size=1.5) +
       xlab("Age (days)") + ylab("Number of wakes") +
       ggtitle("Number of wakes") +
       theme(legend.position = "none",
             axis.title.y = element_blank())
-    
+
     p3<-ggplot(dataset,aes(DaysOld,happiness)) +
       geom_smooth(method=lm,size=1.5) +
       xlab("Age (days)") + ylab("Happiness") +
@@ -383,109 +398,109 @@ ggplot(dataset,aes(numwakes,energy)) +
       ylim(c(6,9))+
       theme(legend.position = "none",
             axis.title.y = element_blank())
-    
+
     p4<-ggplot(dataset,aes(DaysOld,energy)) +
       geom_smooth(method=lm,size=1.5) +
       xlab("Age (days)") + ylab("Energy") +
       ggtitle("Energy") +
       theme(legend.position = "none",
             axis.title.y = element_blank())
-    
+
     grid.arrange(p1,p2,p3,p4,ncol=4)
-    
+
     grid.arrange(p3,p4,ncol=2)
-    
+
     table(datahead$Q33_DIA)
     table(datahead$Q33_NOITE)
-    
+
     table(dataset$PREMIUM,dataset$D_Q11)
     table(dataset$PREMIUM,dataset$D_Q12)
     #how much more laughing than usual
     table(dataset$PREMIUM,dataset$D_Q13)
-    
+
     #how many times wake up?
     wakeup<-table(dataset$PREMIUM,dataset$numwakes)
     #average wakes up per night
     mean(dataset$numwakes[dataset$PREMIUM=="ABSORBENT"], na.rm=TRUE)
     mean(dataset$numwakes[dataset$PREMIUM=="ORDINARY"], na.rm =TRUE)
-    
+
     mean(dataset$energy[dataset$PREMIUM=="ABSORBENT"], na.rm=TRUE)
     mean(dataset$energy[dataset$PREMIUM=="ORDINARY"], na.rm =TRUE)
-    
+
     mean(dataset$happiness[dataset$PREMIUM=="ABSORBENT"], na.rm=TRUE)
     mean(dataset$happiness[dataset$PREMIUM=="ORDINARY"], na.rm =TRUE)
-    
+
     #did you change your baby in the night?
     table(dataset$PREMIUM,dataset$D_Q6)
-    
+
     #in the morning how was the diaper
     drywet<-table(dataset$PREMIUM,dataset$D_Q9)
     #Labels:
-    #  Dry    Wet Soiled 
-    #   1      2      3 
+    #  Dry    Wet Soiled
+    #   1      2      3
     drywet
-    
-    
+
+
     dataset$D_Q9
     drywet[1,]/sum(drywet[1,])
     drywet[2,]/sum(drywet[2,])
-    
+
     mean
     summary(dataset$D_Q11)
-    
-    
+
+
     #wet vs happy
     aggregate(dataset$D_Q11, list(dataset$D_Q9), mean)
     wethappy<-table(dataset$D_Q9,dataset$D_Q11)
-    par(mfrow=c(3,1)) 
+    par(mfrow=c(3,1))
     barplot(wethappy[1,],xlab = "Dry")
     barplot(wethappy[2,],xlab = "Wet")
     barplot(wethappy[3,],xlab = "Soiled")
-    
-    
+
+
     #wet vs energetic
     aggregate(dataset$D_Q12, list(dataset$D_Q9), mean)
     wetenergy<-table(dataset$D_Q9,dataset$D_Q12)
-    par(mfrow=c(3,1)) 
+    par(mfrow=c(3,1))
     barplot(wetenergy[1,],xlab = "Dry")
     barplot(wetenergy[2,],xlab = "Wet")
     barplot(wetenergy[3,],xlab = "Soiled")
-    
+
     #wet vs energetic
     aggregate(dataset$D_Q13, list(dataset$D_Q9), mean)
     wetgiggles<-table(dataset$D_Q9,dataset$D_Q13)
-    par(mfrow=c(3,1)) 
+    par(mfrow=c(3,1))
     barplot(wetgiggles[1,],xlab = "Dry")
     barplot(wetgiggles[2,],xlab = "Wet")
     barplot(wetgiggles[3,],xlab = "Soiled")
-    
-    
-    
-    
+
+
+
+
     (ggplot(dataset,aes(x=D_Q11))+stat_bin(binwidth = 1,origin=0)
      + facet_grid(D_Q9~.)
      + ggtitle("Happiness vs wetness"))
-    
+
     #wet vs energetic
     table(dataset$D_Q9,dataset$D_Q12)
-    
+
     table(dataset$D_Q9,dataset$D_Q13)
-    
-    
-    
-    
+
+
+
+
     #Correlations
     cols<-c('DaysOld','hourssleep','SURGENCY','NEG_AFFECT',
             'EFFORTFUL','numwakes','happiness','energy', 'giggly')
-    
-    
+
+
     corrgram(datahead[,cols],order=TRUE, lower.panel=panel.pie,
                        upper.panel=panel.pts, text.panel=panel.txt,
-                       diag.panel=panel.minmax, 
+                       diag.panel=panel.minmax,
                        main="Main Correlations in PC2/PC1 Order")
     #word cloud
-    
-    
+
+
     allwords<-gsub(" me"," mom",dataset$D_Q14,ignore.case = TRUE)
     allwords<-gsub("played","play",allwords,ignore.case = TRUE)
     allwords<-gsub("playing","play",allwords,ignore.case = TRUE)
@@ -499,19 +514,19 @@ ggplot(dataset,aes(numwakes,energy)) +
     allwords<-gsub("When","",allwords,ignore.case = TRUE)
     allwords<-gsub("morning","",allwords,ignore.case = TRUE)
     wordcloud(allwords, colors=brewer.pal(8, "Dark2"),max.words=60)
-    
+
     review_text <- paste(allwords, collapse=" ")
     review_source <- VectorSource(review_text)
-    
+
     tmcloud<-Corpus(review_source)
-    
+
     tmcloud <- tm_map(tmcloud,tolower)
     tmcloud <- tm_map(tmcloud,removeWords, stopwords("english"))
     tmcloud <- tm_map(tmcloud,removeNumbers)
     tmcloud <- tm_map(tmcloud,removePunctuation)
     tmcloud <- tm_map(tmcloud,stripWhitespace)
-    tmcloud <- tm_map(tmcloud, PlainTextDocument)   
-    
+    tmcloud <- tm_map(tmcloud, PlainTextDocument)
+
     dtm <- DocumentTermMatrix(tmcloud)
     dtm2 <- as.matrix(dtm)
      m <- as.matrix(dtm)
@@ -520,21 +535,21 @@ ggplot(dataset,aes(numwakes,energy)) +
     words <- names(v)
     d <- data.frame(word=words, freq=v)
     write.csv(d,"wordfrequencies.csv")
-    
-    
-    
+
+
+
     #####################
     # LINEAR MODELS
     ####################
-    
+
     sleeplm<-lm(hourssleep ~ relativebedtime + DaysOld + PREMIUM + numwakes +  nightfeed + diaperstate + changediaper+ (1/SbjNum),data=dataset)
     summary.lm(sleeplm)
     plot()
 
     reg3 = regsubsets(hourssleep ~ relativebedtime + DaysOld + PREMIUM + numwakes +  nightfeed + diaperstate + changediaper+ (1/SbjNum),
-                      data=dataset, method = "backward")                                                                                                                                                                                                                                                                                                            
+                      data=dataset, method = "backward")
     summary(reg3)
-    
+
     #straight linear model
     glmulti.lm.out <-
       glmulti(hourssleep ~ relativebedtime + DaysOld + PREMIUM + numwakes +  nightfeed + diaperstate + changediaper+ (1/SbjNum),
@@ -545,18 +560,18 @@ ggplot(dataset,aes(numwakes,energy)) +
               confsetsize = 5,         # Keep 5 best models
               plotty = F, report = F,  # No plot or interim reports
               fitfunction = "lm")      # lm function
-    
+
     ## Show 5 best models (Use @ instead of $ for an S4 object)
     glmulti.lm.out@formulas
     summary(glmulti.lm.out)
-    
+
     bestfit<-glmulti.lm.out@objects[[1]]
     summary.lm(bestfit)
-              
+
     bestfit<-lm(hourssleep ~ 1 + diaperstate + changediaper + relativebedtime + NEG_AFFECT + EFFORTFUL + numwakes + (1/SbjNum),
                 data = dataset)
     summary.lm(bestfit)
-                
+
     #linear model with interactions
     glmulti2.out <-
       glmulti(hourssleep ~ relativebedtime + DaysOld + PREMIUM + numwakes +  nightfeed + diaperstate + changediaper+ (1/SbjNum),
@@ -567,12 +582,12 @@ ggplot(dataset,aes(numwakes,energy)) +
               confsetsize = 5,         # Keep 5 best models
               plotty = F, report = F,  # No plot or interim reports
               fitfunction = "lm")      # lm function
-    
+
     ## Show 5 best models (Use @ instead of $ for an S4 object)
     glmulti2.out@formulas
     summary(glmulti2.out@objects[[1]])
-    
-    
+
+
     glhappiness <-
       glmulti(happiness ~ hourssleep + hourssleep:PREMIUM + relativebedtime + DaysOld + PREMIUM + numwakes +  nightfeed + diaperstate + changediaper+ (1/SbjNum),
               data = dataset,
@@ -582,11 +597,11 @@ ggplot(dataset,aes(numwakes,energy)) +
               confsetsize = 5,         # Keep 5 best models
               plotty = F, report = F,  # No plot or interim reports
               fitfunction = "lm")      # lm function
-    
+
     glhappiness@formulas
     summary(glhappiness@objects[[1]])
-    
-    
+
+
     glenergy <-
       glmulti(energy ~ hourssleep + hourssleep:PREMIUM + relativebedtime + DaysOld + PREMIUM + numwakes +  nightfeed + diaperstate + changediaper+ (1/SbjNum),
               data = dataset,
@@ -596,7 +611,7 @@ ggplot(dataset,aes(numwakes,energy)) +
               confsetsize = 5,         # Keep 5 best models
               plotty = F, report = F,  # No plot or interim reports
               fitfunction = "lm")      # lm function
-    
+
     glenergy@formulas
     summary(glenergy@objects[[1]])
   ```
