@@ -5,8 +5,16 @@ date: "26/04/2019"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+#first let's fix the snapshot date for all packages we will use as 1st Feb 2019
+library(checkpoint)
+checkpoint("2019-02-01")
+```
+
+```{r libraries, include=FALSE}
+
 ```
 
 ## R Markdown
