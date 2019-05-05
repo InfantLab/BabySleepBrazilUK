@@ -14,8 +14,8 @@ notedown input.Rmd --knit > output.ipynb
 ```
 ## R Libraries
 
-These are the libraries we use and we use `checkpoint` to fix all their versions to the MRAN snapshot for 1st Feb 2019.
-
+These are the libraries we use. We use `checkpoint` to fix all their versions to the MRAN snapshot for 1st Feb 2019.
+y
 ```{r libraries, include = TRUE}
 library(checkpoint)
 checkpoint("2019-02-01")
@@ -34,7 +34,11 @@ library(glmulti)
 
 ## Loading & recoding the data
 
-We classify babies who were in absorbent and ordinary diapers and we calculate the scores for the IBQ-R (Rothbart et al, 2003).
+All the raw data from the 10 day sleep diary is in the file `10DAY BABY SLEEP SURVEY.sav`. 
+Steps:
+1. We load this data
+2. Classify babies who were in absorbent and ordinary diapers
+3. Calculate the scores for the temprament questionnaire (IBQ-R - Rothbart et al, 2003).
 
 ```{r load-data}
 #load data
@@ -103,6 +107,7 @@ dataset$hourssleep <- dataset$secondssleep /3600
 dataset$hourssleep[dataset$hourssleep >16] <- NA
 dataset$hourssleep[dataset$hourssleep < 5] <- NA
 ```
+
 ```{r relabel-diary}
 #set up nicely labelled, numeric versions of diary questions
 dataset$numwakes<-as.numeric(as.character(dataset$D_Q3))
@@ -154,7 +159,7 @@ aggregate(hourssleep ~ PREMIUMORIG, FUN=mean, data=dataset)
 t.test(hourssleep ~ PREMIUM,data = dataset)
 ```
 
-```{r}
+```{r simple-comparisons}
 cor(dataset$hourssleep,dataset$happiness,use = "pairwise.complete.obs")
 cor.test(dataset$hourssleep,dataset$happiness,use = "pairwise.complete.obs")
 
