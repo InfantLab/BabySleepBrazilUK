@@ -1,29 +1,49 @@
 ---
-title: "BabySleepAnalysis"
+title: "Baby Sleep Diary - Data Analysis"
 author: "Caspar Addyman"
 date: "26/04/2019"
 output: html_document
 ---
 
+This notebook sets up the `R` environment and packages to run analyses for sleep diary studies run in Sao Paulo, Brazil and the United Kingdom. Studies were conducted by Caspar Addyman [c.addyman@gold.ac.uk](mailto:c.addyman@gold.ac.uk) in collaboration with Procter & Gamble.
+
+Note:
+In this directory there are synchronised RMarkdown (`.Rmd`) and Jupyter/IPython (`.ipynb`) versions of this document. We create the Jupyter version by using the python package [`notedown`](https://github.com/aaren/notedown) with the following command:
+
+```
+notedown input.Rmd --knit > output.ipynb
+```
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-#fix checkpoint date for all packages as 1st Feb 2019
-library(checkpoint)
-checkpoint("2019-02-01")
+options(digits = 3)
 ```
 
-```{r libraries, include=FALSE}
-install.packages(c("foreign","haven","xlsx","ggplot2","ggthemes","dplyr","corrgram","gridExtra","wordcloud","leaps"))
+## R Libraries
+
+These are the libraries we use. We use `checkpoint` to fix all their versions to the MRAN snapshot for 1st May 2019.
+
+The base version of R used was R-3.6.0.  
+
+Note: The package `glmulti` depends on `rJava` which can be [quite fiddly to install]( 
+https://cimentadaj.github.io/blog/2018-05-25-installing-rjava-on-windows-10/installing-rjava-on-windows-10/).
+
+
+
+```{r libraries, include = TRUE}
+library(checkpoint)
+checkpoint("2019-05-01")
+library(tidyverse)
 library(foreign)
 library(haven)
-library(xlsx)
-library(ggplot2)
+library(expss)
+library(lubridate)
 library(ggthemes)
-library(dplyr)
 library(corrgram)
 library(gridExtra)
 library(leaps)
-library(MASS) 
+library(MASS)
+library(rJava)
 library(glmulti)
 ```
+

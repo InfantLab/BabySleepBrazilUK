@@ -86,9 +86,12 @@ We report how we determined our sample size, all data exclusions (if any), all m
 ## Participants
 Middle class & lower middle class families recruited in southern central São Paulo. Recruitment was done
 
-117 mothers & babies (53 female,
+116 mothers & babies (53 female,
 mean age = 13.9 months, range = 2-27m) 
 
+The study was conducted according to the guidelines in the Declaration
+of Helsinki and procedures were approved by the Ethics Committee of the Birkbeck, University of London.
+Written informed consent was obtained from all parents or guardians prior to data collection.
 
 ## Material
 On Day 0 all participants 

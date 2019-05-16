@@ -6,50 +6,48 @@ output: html_notebook
 
 This notebook contains the `R` code to load and process data from 10 day sleep survey conducted in Sao Paulo, Brazil in June 2015. In collaboration with Procter & Gamble.
 
-Note:
-In this directory there are synchronised RMarkdown (`.Rmd`) and Jupyter/IPython (`.ipynb`) versions of this document. We create the Jupyter version by using the python package `notedown` with the following command:
+To install the right R packages, first run the [`BabySleepAnalysis.Rmd`](".\..\BabySleepAnalysis.Rmd").
 
-```
-notedown input.Rmd --knit > output.ipynb
-```
-## R Libraries
-
-These are the libraries we use. We use `checkpoint` to fix all their versions to the MRAN snapshot for 1st Feb 2019.
-y
-```{r libraries, include = TRUE}
-library(checkpoint)
-checkpoint("2019-02-01")
-library(foreign)
-library(haven)
-library(xlsx)
-library(ggplot2)
-library(ggthemes)
-library(dplyr)
-library(corrgram)
-library(gridExtra)
-library(leaps)
-library(MASS)
-library(glmulti)
-```
 
 ## Loading & recoding the data
 
 All the raw data from the 10 day sleep diary is in the file `10DAY BABY SLEEP SURVEY.sav`. 
 Steps:
+
 1. We load this data
 2. Classify babies who were in absorbent and ordinary diapers
 3. Calculate the scores for the temprament questionnaire (IBQ-R - Rothbart et al, 2003).
 
 ```{r load-data}
 #load data
-dataset = read_sav("10DAY BABY SLEEP SURVEY.sav")
+dataset= read_spss("10DAY BABY SLEEP SURVEY.sav")
+```
 
+Next we calculate the babies ages on the first day of the survey (2015-06-20).
+```{r ages}
+#baby ages
+surveyStartDate <-as.Date('20/06/2015',format='%d/%m/%Y')
+baseDateTime <-as.POSIXct('2015-06-20 00:00:00') #used for bedtime calculations
+dataset$DOB<-as.Date(paste(dataset$Q9_DIA,dataset$Q9_MES,dataset$Q9_ANO, sep='/'),format='%d/%m/%Y')
+dataset$DaysOld <- as.integer(surveyStartDate-dataset$DOB)
+dataset$OverOne <- dataset$DaysOld>365
+
+ggplot(dataset, aes(DaysOld)) + geom_histogram(binwidth = 25)
+```
+Looking at a histogram of ages we see that there is one outlying baby who is `r max(dataset$DaysOld)`. So we remove this baby. 
+
+```{r remove-outlier}
+dataset <- dataset %>% filter(DaysOld < 800)
+```
+
+```{r diapertypes}
 #sleeping in pampers?
 dataset$PAMPERS<- ifelse(dataset$Q33_NOITE == "PAMPERS", "PAMPERS", "OTHER")
-#sleeping in more absorbent premium brand (pamers or turm da monica)?
-dataset$PREMIUMORIG<-ifelse((dataset$Q33_NOITE == "PAMPERS" | dataset$Q33_NOITE == "TURMA DA MONICA"),"ABSORBENT","ORDINARY")
+#sleeping in more absorbent premium brand (pamers, turm da monica or mamy poko)?
 dataset$PREMIUM<-ifelse((dataset$Q33_NOITE == "PAMPERS" | dataset$Q33_NOITE == "TURMA DA MONICA" | dataset$Q33_NOITE == "MAMY POKO"),"ABSORBENT","ORDINARY")
+```
 
+```{r recode-ibq}
 #Infant behaviour questionnaire scores (IBQ-R)
 dataset$Q31_11r <- (8-dataset$Q31_11)
 #which columns count for which list?
@@ -59,26 +57,24 @@ efflist = c('Q31_5','Q31_6','Q31_11r','Q31_12','Q31_18','Q31_19','Q31_24','Q31_2
 dataset$SURGENCY <- rowMeans(dataset[,surglist],na.rm=TRUE)
 dataset$NEG_AFFECT <- rowMeans(dataset[,neglist],na.rm=TRUE)
 dataset$EFFORTFUL <- rowMeans(dataset[,efflist],na.rm=TRUE)
+head(dataset)
 ```
 
-```{r ages}
-#baby ages
-surveyStartDate <-as.Date('20/06/2015',format='%d/%m/%Y')
-dob<-paste(dataset$Q9_DIA,dataset$Q9_MES,dataset$Q9_ANO, sep='/')
-dataset$DOB<-as.Date(dob,format='%d/%m/%Y')
-dataset$DaysOld <- as.integer(surveyStartDate-dataset$DOB)
-dataset$OverOne <- dataset$DaysOld>365
-```
 
 ```{r unique}
 #Isolate the header info.
-datahead <- dataset[,c(1:223,245:254)]
+datahead <- dataset[,c(1:223,245:253)]
 #one unique row per baby
 datahead <- unique(datahead)
+head(datahead)
 ```
+## Participant info
+
+So we have data from `r nrow(datahead)` babies (`r count_if(2, datahead$Q8A_SEXO1)` female). The survey was filled in by `r nrow(datahead)` mothers, average age `r mean(datahead$Q5_EXATA)` +/- `r sd(datahead$Q5_EXATA)` years. The average age of the babies was `r mean(datahead$DaysOld)` +/- `r sd(datahead$DaysOld)`. 
+
 ## Sleeping times
 
-Next we
+Next we want to work out how long the babies slept each night based on a giong to sleep time and a wake time. Need to be a little careful because mostly babies go to bed one calendar day and wake the next but sometimes they go to bed after midnight so need to handle both conditions. 
 ```{r sleeptimes}
 
 lengthsleep<-function(sleep, wake){
@@ -91,23 +87,30 @@ lengthsleep<-function(sleep, wake){
   return (sleeptime)
 }
 
-#who went to bed early?
+#who went to bed when?
 #measure backwards from six am
-dawn<-hms(6*60*60) #6am
-dataset$relativebedtime <-mapply(lengthsleep,dataset$D_Q1_DORMIR,dawn)
-dataset$relativebedtime <- dataset$relativebedtime /3600
-#exlcude very long sleep - probably data errors
-dataset$relativebedtime[dataset$relativebedtime >14] <- NA
+six_am<-hms(6*60*60)
+dataset$bedtimehoursbefore6am <-mapply(lengthsleep,dataset$D_Q1_DORMIR,six_am)
 
-dataset$bedrelativetomidnight <- 6 - dataset$relativebedtime
+dataset$bedtime <- baseDateTime + six_am - dataset$bedtimehoursbefore6am 
+```
+
+
+```{r sleeplength}
 #how long did they sleep?
 dataset$secondssleep <- mapply(lengthsleep, dataset$D_Q1_DORMIR,dataset$D_Q2_ACORDAR)
 dataset$hourssleep <- dataset$secondssleep /3600
-#exlcude very long or short sleep - probably data errors
-dataset$hourssleep[dataset$hourssleep >16] <- NA
-dataset$hourssleep[dataset$hourssleep < 5] <- NA
+dataset$wakehour <-dataset$D_Q2_ACORDAR /3600
+dataset$waketime2 <-baseDateTime + dataset$D_Q2_ACORDAR
 ```
 
+```{r plot-bedtime}
+ggplot(dataset, aes(bedtime)) + geom_histogram(bins = 18) + labs(title="Histogram of bed times.")
+ggplot(dataset, aes(waketime2)) + geom_histogram(bins = 18) + labs(title="Histogram of wake times.")
+```
+
+
+Next relabel the interesting columns:
 ```{r relabel-diary}
 #set up nicely labelled, numeric versions of diary questions
 dataset$numwakes<-as.numeric(as.character(dataset$D_Q3))
@@ -121,6 +124,8 @@ dataset$energy<-as.numeric(dataset$D_Q12)
 dataset$giggles<-as.numeric(dataset$D_Q13)
 ```
 
+## Averages per baby
+Each family completed diary for 10 days so get their average scores.
 ```{r averages}
 #calculate averages for each baby..
 #average sleep?
@@ -148,36 +153,30 @@ names(dt)[2]<-'giggly'
 datahead<-left_join(x = datahead, y = dt, by = "ID")
 ```
 
-```{r data-by-diaper}
-aggregate(hourssleep ~ PAMPERS, FUN=mean, data=datahead)
-aggregate(numwakes ~ PAMPERS, FUN=mean, data=datahead)
-aggregate(happiness ~ PAMPERS, FUN=mean, data=datahead)
-aggregate(energy ~ PAMPERS, FUN=mean, data=datahead)
+Do babies sleep longer in more aborbent diapers?
 
-aggregate(hourssleep ~ PREMIUM, FUN=mean, data=dataset)
-aggregate(hourssleep ~ PREMIUMORIG, FUN=mean, data=dataset)
-t.test(hourssleep ~ PREMIUM,data = dataset)
+```{r ttest}
+t.test(hourssleep ~ PREMIUM,data = datahead,var.equal = TRUE)
 ```
 
-```{r simple-comparisons}
-cor(dataset$hourssleep,dataset$happiness,use = "pairwise.complete.obs")
-cor.test(dataset$hourssleep,dataset$happiness,use = "pairwise.complete.obs")
+Do they wake up less often?
 
-cor(dataset$hourssleep,dataset$energy,use = "pairwise.complete.obs")
-cor.test(dataset$hourssleep,dataset$energy,use = "pairwise.complete.obs")
+```{r ttest2}
+t.test(numwakes ~ PREMIUM,data = datahead,var.equal = TRUE)
+```
+Do they wake up happier?
 
-aggregate(numwakes ~ PREMIUM, FUN=mean, data=datahead)
-t.test(numwakes ~ PREMIUM,data = dataset)
+```{r ttest3}
+t.test(happiness ~ PREMIUM,data = datahead,var.equal = TRUE)
+```
 
-aggregate(happiness ~ PREMIUM, FUN=mean, data=dataset)
-t.test(happiness ~ PREMIUM,data = dataset)
+Do they wake up more energetic?
 
-aggregate(energy ~ PREMIUM, FUN=mean, data=dataset)
-t.test(energy ~ PREMIUM,data = dataset)
+```{r ttest4}
+t.test(energy ~ PREMIUM,data = datahead,var.equal = TRUE)
+```
 
-aggregate(giggly ~ PREMIUM, FUN=mean, data=datahead)
-t.test(D_Q13 ~ PREMIUM,data = dataset)
-
+```{r byage}
 ###
 #Filter by age?
 #dataset<-subset(dataset,OverOne==TRUE)
@@ -185,7 +184,6 @@ t.test(D_Q13 ~ PREMIUM,data = dataset)
 table(datahead$PREMIUM)
 
 table(dataset$happiness)
-table(dataset$Q27)
 
 
 #in separate room?
