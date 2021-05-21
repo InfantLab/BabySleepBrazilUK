@@ -1,4 +1,4 @@
-#install.packages(c("ggplot2", "ggthemes","lubridate", "tidyr","ez"))
+install.packages(c("ggplot2", "ggthemes","lubridate", "tidyr","ez"))
   library(ggplot2)
   library(ggthemes)
   library(glmulti)
@@ -11,12 +11,12 @@
 ##assumes we have already processed the data 
 
 ###load the data
-setwd("C:\\Users\\caspar\\Dropbox\\Baby Laughter\\Pampers\\UK Sleep study")
+setwd("C:\\Users\\cas\\OneDrive - Goldsmiths College\\Projects\\Baby Laughter\\BabySleepBrazilUK\\UK")
 #setwd("C:\\Users\\pss02ca\\Dropbox\\Baby Laughter\\Pampers\\UK Sleep study")
 
 babies <- readRDS("babies.rds")
 diaries <- readRDS("diaries.rds")
-
+babies= read_spss("babies.sav")
 
 
 hist(babies$daysOld)
@@ -160,7 +160,6 @@ summary.lm(energylm)
 
 
 #in separate room?
-table(babies$)
 aggregate(DaysOld ~ Q13, FUN=mean, data=babies)
 aggregate(hourssleep ~ Q13, FUN=mean, data=babies)
 aggregate(numwakes ~ Q13, FUN=mean, data=babies)

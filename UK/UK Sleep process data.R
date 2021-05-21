@@ -13,7 +13,7 @@ diary =  read.spss("Final data_Diary Week 1+2+3.clean.sav", to.data.frame=TRUE)
 
 #Infant behaviour questionnaire scores
 #first convert these to numeric
-#check that cols are in teh right place
+#check that these cols are in teh right place
 colnames(preuse)[135] #ought to be preuse.Q31_1
 colnames(preuse)[171] #ought to be preuse.Q31_37
 #need to do these individually

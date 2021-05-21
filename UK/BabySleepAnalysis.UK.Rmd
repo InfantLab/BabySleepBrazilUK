@@ -1,0 +1,1093 @@
+---
+title: "BabySleep RStats Analysis - UK"
+author: "Caspar Addyman"
+output: html_notebook
+---
+
+# Baby Sleep Analysis - United Kingdom
+
+This notebook contains the `R` code to load and process data from 21 day sleep survey conducted in United Kingdom in April 2016. In collaboration with Procter & Gamble.
+
+## R libraries
+
+To install the right R packages, first run the file [`BabySleepRLibraries.Rmd`]('.\BabySleepRLibraries.Rmd').
+
+## Loading & recoding the data
+
+All the raw data from the 10 day sleep diary is in the file `10DAY BABY SLEEP SURVEY.sav`. Steps:
+
+1.  Load the data
+
+```{r load-data}
+#load data
+preuse = read.spss("Final Data_Screener&Pre-Use.sav", to.data.frame=TRUE )
+diary =  read.spss("Final data_Diary Week 1+2+3.clean.sav", to.data.frame=TRUE)
+```
+
+```{r}
+
+#start date 
+dayOne = as.POSIXct('2016-04-20 00:00:00') 
+baseDateTime <-as.POSIXct('2015-06-20 00:00:00') #used for bedtime calculations
+#used for bedtime calculations
+
+
+#Infant behaviour questionnaire scores
+#first convert these to numeric
+#check that these cols are in teh right place
+colnames(preuse)[135] #ought to be preuse.Q31_1
+colnames(preuse)[171] #ought to be preuse.Q31_37
+#need to do these individually
+for (i in 135:171){
+  preuse[,i]<-as.numeric(preuse[,i])
+}
+
+#which columns count for which list?
+surglist = c('preuse.Q31_1','preuse.Q31_2','preuse.Q31_7','preuse.Q31_8','preuse.Q31_13','preuse.Q31_14','preuse.Q31_15','preuse.Q31_20','preuse.Q31_21','preuse.Q31_26','preuse.Q31_27','preuse.Q31_36','preuse.Q31_37')
+neglist = c('preuse.Q31_3','preuse.Q31_4','preuse.Q31_9','preuse.Q31_10','preuse.Q31_16','preuse.Q31_17','preuse.Q31_22','preuse.Q31_23','preuse.Q31_28','preuse.Q31_29','preuse.Q31_32','preuse.Q31_33')
+efflist = c('preuse.Q31_5','preuse.Q31_6','preuse.Q31_11r','preuse.Q31_12','preuse.Q31_18','preuse.Q31_19','preuse.Q31_24','preuse.Q31_25','preuse.Q31_30','preuse.Q31_31','preuse.Q31_34','preuse.Q31_35')
+
+#raw data has missing values coded as 8 so replace these with NA
+#first the reverse scored item
+preuse <-df.Rep(preuse, c("preuse.Q31_11"),8, NA)
+#now reverse it
+preuse$preuse.Q31_11r <- (8-preuse$preuse.Q31_11) #this q is reverse scored
+#next all others 
+preuse <-df.Rep(preuse, surglist,8, NA)
+preuse <-df.Rep(preuse, neglist,8, NA)
+preuse <-df.Rep(preuse, efflist,8, NA)
+
+
+preuse$SURGENCY <- rowMeans(preuse[,surglist],na.rm=TRUE)
+preuse$NEG_AFFECT <- rowMeans(preuse[,neglist],na.rm=TRUE)
+preuse$EFFORTFUL <- rowMeans(preuse[,efflist],na.rm=TRUE)
+```
+
+```{r}
+preuse$household.size <- preuse$preuse.Q10
+#Sleep questionnaire 
+preuse$sleepq.where  <- preuse$preuse.Q12
+preuse$sleepq.routine  <- preuse$preuse.Q13
+preuse$sleepq.position  <- preuse$preuse.Q14   #front, back, side
+preuse$sleepq.fall.asleep  <- preuse$preuse.Q15   #how fall asleep (feeding, held, etc)
+preuse$sleepq.how.to.bed  <- preuse$preuse.Q16      #asleep, awake
+
+#sleep at night
+#sleep amounts in minutes and hours
+preuse$sleepq.night.dur.min <- as.numeric(parse_hm(preuse$preuse.Q17a)) /60
+preuse$sleepq.night.dur.hrs <- preuse$sleepq.night.dur.min / 60
+
+#sleep in day
+preuse$sleepq.day.dur.min  <-  as.numeric(parse_hm(preuse$preuse.Q17b)) /60   
+preuse$sleepq.day.dur.hrs  <- preuse$sleepq.day.dur.min /60
+
+#awake in night
+preuse$sleepq.awake.night.dur.min <- as.numeric(parse_hm(preuse$preuse.Q17c))/60
+preuse$sleepq.awake.night.dur.hrs <- preuse$sleepq.awake.night.dur.min / 60
+
+#long to get to sleep
+preuse$sleepq.get.to.sleep.dur.min <- as.numeric(parse_hm(preuse$preuse.Q17d))/60
+preuse$sleepq.get.to.sleep.dur.hrs <- preuse$sleepq.get.to.sleep.dur.min/60
+
+#when baby to sleep
+preuse$sleepq.tobed <- parse_hm(preuse$preuse.Q17e) 
+
+#sleep1.tobed is entered as hhmm. so minutes since midnight so convert into a time by multiplying by 60 and measuring from 6am. Complicated but it works!  
+bedtimehoursbefore6am  <-mapply(lengthsleep,preuse$sleepq.tobed,six_am)
+
+preuse$sleepq.bedtime <- baseDateTime + six_am - bedtimehoursbefore6am 
+#waketime 
+#NOTE THiS IS ESTIMATE - based on duration which some parents may misinterpret.
+preuse$sleepq.waketime <- preuse$sleepq.bedtime +  preuse$sleepq.night.dur.min * 60 + preuse$sleepq.awake.night.dur.min * 60 
+
+preuse$sleepq.wake.night.YesNo <- (preuse$preuse.Q18 > 0)
+preuse$sleepq.wake.night.Num <- preuse$preuse.Q18
+#preuse$sleepq.wake.reason <- preuse$preuse.Q20
+preuse$sleepq.diaper.change <- preuse$preuse.Q20
+preuse$sleepq.diaper.help.sleep <- preuse$preuse.Q21
+preuse$sleepq.num.day.naps <- preuse$preuse.Q22
+preuse$sleepq.better.active.calm.day <- preuse$preuse.Q.25
+preuse$sleepq.better.few.many.naps <- preuse$preuse.Q.26
+preuse$sleepq.child.sleep.problem  <- preuse$preuse.Q.27
+preuse$sleepq.satisfied.child.sleep  <- preuse$preuse.Q.28
+#preuse$sleepq.you.lack.sleep  <- preuse$preuse.Q29
+preuse$sleepq.impacts.activtiy  <- preuse$preuse.Q.29
+```
+
+```{r}
+###relabel and turn text based times into numerical values
+
+preuse$DOB <- as.Date(preuse$preuse.Q4,"%d/%m/%Y" )
+preuse$DaysOld <- as.numeric(difftime(dayOne,preuse$DOB))
+
+#filter the babies 
+babies<-filter(preuse, DaysOld > 200 & DaysOld < 450 )
+diaries<-subset(diary, Resp_id %in% babies$Resp_id)
+
+diaries$sleepq.where <-    babies[match(diaries$Resp_id, babies$Resp_id),"preuse.Q12"]
+diaries$sleepq.routine <-    babies[match(diaries$Resp_id, babies$Resp_id),"sleepq.routine"]
+diaries$sleepq.where <- as.numeric(diaries$sleepq.where )
+diaries$sleepq.routine <- as.numeric(diaries$sleepq.routine)
+
+diaries$sleepq.day.dur.hrs <-    babies[match(diaries$Resp_id, babies$Resp_id),"sleepq.day.dur.hrs"]
+
+diaries$DaysOld <-    babies[match(diaries$Resp_id, babies$Resp_id),"DaysOld"]
+diaries$household.size <-    babies[match(diaries$Resp_id, babies$Resp_id),"household.size"]
+
+diaries$DaysOld <-    babies[match(diaries$Resp_id, babies$Resp_id),"DaysOld"]
+diaries$SURGENCY <-   babies[match(diaries$Resp_id, babies$Resp_id),"SURGENCY"]
+diaries$NEG_AFFECT <- babies[match(diaries$Resp_id, babies$Resp_id),"NEG_AFFECT"]
+diaries$EFFORTFUL <-  babies[match(diaries$Resp_id, babies$Resp_id),"EFFORTFUL"]
+
+#relabel DVs (creating extra cols because i never remember how to rename cols in R)
+diaries$night.feed <- as.numeric(diaries$diary.Q5)
+diaries$numwakes <- diaries$diary.Q3
+diaries$diaper.type <- as.numeric(diaries$product)
+diaries$diaper.changed <- as.numeric(diaries$diary.Q6)
+diaries$diaper.state <- as.numeric(diaries$diary.Q9)
+diaries$happiness <- diaries$diary.Q12 
+diaries$energy <- diaries$diary.Q11
+
+diaries$parent.happiness <- diaries$diary.Q24
+diaries$parent.energy <- diaries$diary.Q23
+diaries$parent.sleepquality <- diaries$diary.Q22
+
+diaries$parent.wokenbybaby <- diaries$diary.Q18
+diaries$parent.otherwakes <- diaries$diary.Q19
+diaries$parent.totalwakes <- diaries$parent.wokenbybaby + diaries$parent.otherwakes
+
+```
+
+```{r}
+latebedtime<-function(bedtime, noon){
+  #function to adjust the date of bedtime if it passes midnight
+  if (is.na(bedtime)){
+    #skip this one
+    return (NA)
+  }else if (as.numeric(difftime(bedtime,noon)) < 0) {
+    #if bedtime is before noon then we need to increase the date
+    bedtime <- bedtime + period(1,"days")
+  }
+  return (bedtime)  
+} 
+
+#### calculate baby sleep hours, 
+## need to paste in start-date as string and convert. 
+week1 = as.character(diaries$start_date)
+noon <- paste(week1, "12:00")
+noon <-parse_date_time(noon, "dmy HM")
+
+bedtime = as.character(diaries$diary.Q1)
+bedtime = paste(week1, bedtime)
+bedtime <-parse_date_time(bedtime, "dmy HM")
+bedtime <- mapply(latebedtime,bedtime,noon)
+#for some stupid reason that spits out the numeric value rather than date 
+#so have to convert it back
+bedtime <- as.POSIXct(bedtime,origin="1970-01-01", tz = "UTC")
+
+waketime = as.character(diaries$diary.Q2)
+waketime = paste(week1, waketime)
+waketime <-parse_date_time(waketime, "dmy HM")
+#morning is next day
+waketime <- waketime + period(1,"days")
+
+diaries$bedtime <- bedtime
+diaries$waketime <- waketime
+diaries$hourssleep <- as.numeric(difftime(waketime,bedtime,units = "hours"))
+diaries$relativebedtime <- as.numeric(difftime(bedtime,noon,units = "hours"))
+diaries$relativewaketime <- as.numeric(difftime(waketime,noon,units = "hours"))
+```
+
+```{r}
+### parent sleep hours
+bedtime = as.character(diaries$diary.Q16)
+bedtime = paste(week1, bedtime)
+bedtime <-parse_date_time(bedtime, "dmy HM")
+bedtime <- mapply(latebedtime,bedtime,noon)
+bedtime <- as.POSIXct(bedtime,origin="1970-01-01", tz = "UTC")
+
+night2 = as.character(diaries$diary.Q17)
+sleeptime = paste(week1, night2)
+sleeptime <-parse_date_time(sleeptime, "dmy HM")
+sleeptime <- mapply(latebedtime,sleeptime,noon)
+#for some stupid reason that spits out the numeric value rather than date 
+#so have to convert it back
+sleeptime <- as.POSIXct(sleeptime,origin="1970-01-01", tz = "UTC")
+
+# now calculate parent scores...
+morning1 = as.character(diaries$diary.Q20)
+morning2 = as.character(diaries$diary.Q21)
+waketime2 = paste(week1, morning1)
+waketime2 <-parse_date_time(waketime2, "dmy HM")
+waketime2 <- waketime2 + period(1,"days") #morning is next day
+getuptime = paste(week1, morning2)
+getuptime <-parse_date_time(getuptime, "dmy HM")
+getuptime <- getuptime + period(1,"days") #morning is next day
+
+diaries$parent.hourssleep <- as.numeric(difftime(waketime2,sleeptime,units = "hours"))
+diaries$parent.hoursinbed <- as.numeric(difftime(getuptime,bedtime,units = "hours"))
+diaries$parent.sleepefficiency <- diaries$parent.hourssleep / diaries$parent.hoursinbed
+diaries$parent.relativebedtime <- as.numeric(difftime(bedtime,noon,units = "hours"))
+diaries$parent.relativesleeptime <- as.numeric(difftime(sleeptime,noon,units = "hours"))
+```
+
+```{r}
+#get rid of annoying as.factor datatypes
+babies$Resp_id <- as.numeric(as.character(babies$Resp_id))
+diaries$Resp_id <- as.numeric(as.character(diaries$Resp_id))
+diaries$numwakes <- as.numeric(as.character(diaries$numwakes))
+```
+
+As with Brazil, we calculate some averages per baby.
+
+```{r}
+rmsq <- function(d){sqrt(mean(d*d))}
+
+#calculate some average values for each baby
+
+dt<- aggregate(hourssleep ~ Resp_id, diaries, FUN = mean)
+names(dt)[2]<-'avg.sleep'
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+dt<- aggregate(numwakes ~ Resp_id, diaries, FUN = mean)
+names(dt)[2]<-'avg.numwakes'
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+dt <- aggregate(relativebedtime ~ Resp_id, diaries, FUN = mean)
+names(dt)[2]<-'avg.bedtime'
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+dt <- aggregate(relativewaketime ~ Resp_id, diaries, FUN = mean)
+names(dt)[2]<-'avg.waketime'
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+
+dt <- aggregate(energy ~ Resp_id, diaries, FUN = mean)
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+dt <- aggregate(happiness ~ Resp_id, diaries, FUN = mean)
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+dt <- aggregate(parent.energy ~ Resp_id, diaries, FUN = mean)
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+dt <- aggregate(parent.happiness ~ Resp_id, diaries, FUN = mean)
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+
+dt <- aggregate(parent.hourssleep ~ Resp_id, diaries, FUN = mean)
+names(dt)[2]<-'parent.sleep'
+babies<-left_join(x = babies, y = dt, by = "Resp_id")
+```
+
+## Save our game
+
+```{r}
+
+#simple formating doesn't seem to reload very reliably
+#write.table(babies,file="babies.dat",sep="\t", qmethod = "escape")
+#write.table(diaries,file="diaries.dat",sep="\t", qmethod = "escape",quote = TRUE)
+
+#R format
+saveRDS(babies, "babies.rds", ascii=TRUE) 
+saveRDS(diaries, "diaries.rds", ascii=TRUE) 
+
+#SPSS format
+write_sav(babies, "babies.sav")
+write_sav(diaries, "diaries.sav")
+```
+
+## Main Analysis
+
+\#\#\#load the data
+
+```{r}
+babies <- readRDS("babies.rds")
+diaries <- readRDS("diaries.rds")
+```
+
+## Participant info & Descriptive stats
+
+We will build a data.frame of summary info for the paper.
+
+We have data from `r nrow(babies)` babies (`r count_if(2, babies$Q8A_SEXO1)` female). The survey was filled in by `r nrow(babies)` mothers, average age `r mean(babies$Q5_EXATA)` +/- `r sd(babies$Q5_EXATA)` years. The average age of the babies was `r mean(babies$DaysOld)` +/- `r sd(babies$DaysOld)`.
+
+```{r}
+#baby age
+mean(babies$DaysOld)
+sd(babies$DaysOld)
+
+#parent age
+mean(babies$age)
+sd(babies$age)
+
+t_apa(t.test(datahead$DaysOld,babies$DaysOld, var.equal = TRUE))
+print("")
+t_apa(t.test(datahead$Q5_EXATA,babies$age, var.equal = TRUE))
+```
+
+Household size (Don't have mothers education for UK Sample)
+
+```{r}
+
+mean(babies$preuse.Q10)
+sd(babies$preuse.Q10)
+
+t_apa(t.test(datahead$household.size,babies$preuse.Q10, var.equal = TRUE))
+```
+
+```{r}
+N_uk = nrow(babies)
+table(babies$preuse.Q12)
+table(babies$preuse.Q12 )/N_uk
+
+#compare sleeping arrangement
+chisq_apa(chisq.test(c(c(25,10,35,44),c(83,10,51,3))))
+
+table(babies$preuse.Q13) #baby sleep routine? 
+table(babies$preuse.Q13 )/N_uk
+
+chisq_apa(chisq.test(c(c(45,  5,64 ),c(107,34,6 ))))
+
+table(babies$sleepq.where)
+table(babies$sleepq.where) /N_uk  #percentages
+
+table(babies$preuse.Q13) #baby sleep routine? 
+table(babies$preuse.Q13) /N_uk  #percentages
+
+table(babies$sleepq.child.sleep.problem)
+table(babies$sleepq.child.sleep.problem)/N_uk  #percentages
+
+table(babies$sleepq.satisfied.child.sleep)
+table(babies$sleepq.satisfied.child.sleep)/N_uk  #percentages
+
+chisq_apa(chisq.test(c(c(108, 3, 3), c(119,     15,   13 ))))
+
+```
+
+### Bedtime & Waketime
+
+Let's start with the basics
+
+```{r}
+#sleepq bedtime
+mean(babies$sleepq.bedtime)
+sd(babies$sleepq.bedtime)/60
+#diary bedtime - have to be careful just to average time part. 
+diaries$bedtime %>% na.omit() %>% as_hms() %>% mean() 
+diaries$bedtime %>% na.omit() %>% as_hms() %>% sd() /60
+
+t_apa(t.test(as.numeric(datahead$sleepq.bedtime),
+             as.numeric(babies$sleepq.bedtime), var.equal = TRUE))
+print("  ")
+t_apa(t.test(alldata$relativebedtime,
+             diaries$relativebedtime, var.equal = TRUE))
+
+#sleepq waketime
+mean(babies$sleepq.waketime)
+sd(babies$sleepq.waketime)/60
+
+print("  ")
+#diary waketime
+diaries$waketime %>% na.omit() %>% as_hms() %>% mean()/3600
+diaries$waketime %>% na.omit() %>% as_hms() %>% sd() /60
+
+
+
+t_apa(t.test(as.numeric(datahead$sleepq.waketime),
+             as.numeric(babies$sleepq.waketime), var.equal = TRUE))
+
+
+print("  ")
+t_apa(t.test(alldata$diary.wakeup,
+             as.numeric(as_hms(diaries$waketime)), var.equal = TRUE))
+
+```
+
+```{r}
+mean(babies$sleepq.wake.night.Num, na.rm = TRUE)
+sd(babies$sleepq.wake.night.Num, na.rm = TRUE)
+#diary bedtime
+mean(diaries$numwakes, na.rm = TRUE)
+sd(diaries$numwakes, na.rm = TRUE )
+
+t_apa(t.test(babies$sleepq.wake.night.Num,
+             datahead$sleepq.wake.night.Num, var.equal = TRUE))
+print("  ")
+t_apa(t.test(diaries$numwakes,
+             alldata$diary.numwakes, var.equal = TRUE))
+
+```
+
+```{r}
+mean(babies$sleepq.day.dur.min )
+sd(babies$sleepq.day.dur.min )
+
+
+t_apa(t.test(as.numeric(babies$sleepq.day.dur.min) ,
+             datahead$sleepq.day.dur.min, var.equal = TRUE))
+
+```
+
+```{r}
+mean(babies$sleepq.night.dur.hrs )
+sd(babies$sleepq.night.dur.hrs )
+
+t_apa(t.test(as.numeric(babies$sleepq.night.dur.hrs) ,
+             datahead$sleepq.night.dur.hrs, var.equal = TRUE))
+
+mean(diaries$hourssleep, na.rm = TRUE)
+sd(diaries$hourssleep  , na.rm = TRUE)
+
+t_apa(t.test(diaries$hourssleep ,
+             alldata$diary.hourssleep, var.equal = TRUE))
+
+
+```
+
+### Comparing parental estimates with sleep diary.
+
+Since the correlations between the estimates and the averages from the diaries are quite low. Let's make some comparisons
+
+Bedtime
+
+```{r}
+
+
+ggplot(data=babies, aes(x=sleepq.bedtime, y= avg.bedtime)) + geom_point() + labs(title = "Bed time - Correlation between diary and questionaire.", xlab = "Bedtime Sleep Questionnaire") +
+#  stat_summary(fun.data= mean_cl_normal) + 
+  geom_smooth(method='lm')
+```
+
+```{r plot-bedtime}
+ggplot(diaries, aes(bedtime)) + geom_histogram(bins = 18) + labs(title="Histogram of bed times.")
+ggplot(diaries, aes(waketime)) + geom_histogram(bins = 18) + labs(title="Histogram of wake times.")
+```
+
+Av Happiness & Energy, + IBQ
+
+```{r}
+mean(diaries$happiness, na.rm=TRUE)
+sd(diaries$happiness, na.rm=TRUE)
+
+t_apa(t.test(diaries$happiness,
+             alldata$diary.happiness, var.equal = TRUE))
+print(" ")
+
+mean(diaries$energy, na.rm=TRUE)
+sd(diaries$energy, na.rm=TRUE)
+
+t_apa(t.test(diaries$energy,
+             alldata$diary.energy, var.equal = TRUE))
+print(" ")
+
+mean(babies$SURGENCY)
+sd(babies$SURGENCY)
+
+t_apa(t.test(babies$SURGENCY,
+             datahead$SURGENCY, var.equal = TRUE))
+print(" ")
+
+mean(babies$NEG_AFFECT)
+sd(babies$NEG_AFFECT)
+
+t_apa(t.test(babies$NEG_AFFECT,
+             datahead$NEG_AFFECT, var.equal = TRUE))
+print(" ")
+
+mean(babies$EFFORTFUL)
+sd(babies$EFFORTFUL)
+
+t_apa(t.test(babies$EFFORTFUL,
+             datahead$EFFORTFUL, var.equal = TRUE))
+
+
+```
+
+## What predicts sleep duration?
+
+A good starting point for analysis is a correlogram of average diary values with some other key variables from the sleep questionnaire. We use the `corrgram` package to plot a big matrix of pairwise correlations.
+
+```{r}
+
+
+#Correlations
+cols<-c('sleepq.night.dur.hrs', 'sleepq.day.dur.hrs', 'sleepq.wake.night.Num',
+        'avg.sleep', 'avg.numwakes',
+        'happiness','energy', 
+        'DaysOld','SURGENCY','NEG_AFFECT','EFFORTFUL')
+labs <-c('Est Sleep', 'Day sleep','Est wakes',
+         'Avg Sleep', 'Avg Wakes',
+         'Avg Happy', 'Avg Energy',
+         'Days Old', 'Surgency', 'Neg Affect','Eff Control')
+
+
+#corrgram(datahead[,cols],order=TRUE, lower.panel=panel.pie,
+#                   upper.panel=panel.pts, text.panel=panel.txt,
+#                   diag.panel=panel.minmax,
+#                   main="Main Correlations in PC2/PC1 Order")
+  
+
+corrgram(babies[,cols],order=FALSE, lower.panel=panel.conf,
+                   upper.panel=panel.pie,
+                   diag.panel=NULL, text.panel =  NULL,
+                   outer.labels = list(top   =list(labels=labs, cex=1,srt=90),
+                                       bottom=list(labels=labs, cex=1,srt=90),
+                                       right =list(labels=labs, cex=1,srt=0),
+                                       left  =list(labels=labs, cex=1,srt=0)),
+                   main="Correlations")
+    
+```
+
+Let's report a bunch of correlations for the paper, using the `apa` library to format the outputs.
+
+```{r}
+writeLines('\nBedtime - Diary vs Questionnaire')
+cor_apa(cor.test(x=as.numeric(babies$sleepq.bedtime),
+                 y=as.numeric(babies$avg.bedtime)), r_ci = TRUE)
+writeLines('\nDuration - Diary vs Questionnaire')
+cor_apa(cor.test(x=as.numeric(babies$sleepq.night.dur.hrs),
+                 y=as.numeric(babies$avg.sleep)), r_ci = TRUE)
+writeLines('\nDiary Sleep duration - Days Old')
+cor_apa(cor.test(x=as.numeric(diaries$hourssleep),
+                 y=as.numeric(diaries$DaysOld)), r_ci = TRUE)
+writeLines('\nDay Sleep duration - Days Old')
+cor_apa(cor.test(x=as.numeric(babies$sleepq.day.dur.hrs),
+                 y=as.numeric(babies$DaysOld)), r_ci = TRUE)
+
+writeLines('\nDuration - Questionnaire Night vs Day')
+cor_apa(cor.test(x=as.numeric(babies$sleepq.night.dur.hrs),
+                 y=as.numeric(babies$sleepq.day.dur.hrs)), r_ci = TRUE)
+
+writeLines('\nDuration - Questionnaire Night vs Num Wakes')
+cor_apa(cor.test(x=as.numeric(babies$sleepq.night.dur.hrs),
+                 y=as.numeric(babies$sleepq.wake.night.Num)), r_ci = TRUE)
+writeLines('\nDuration - Diary Night vs Num Wakes')
+cor_apa(cor.test(x=as.numeric(diaries$hourssleep),
+                 y=as.numeric(diaries$numwakes)), r_ci = TRUE)
+
+writeLines('\nDiary Wakes - Happiness')
+cor_apa(cor.test(x=as.numeric(babies$avg.numwakes),
+                 y=as.numeric(babies$happiness)), r_ci = TRUE)
+
+
+writeLines('\nDiary Sleep duration - Happiness')
+cor_apa(cor.test(x=as.numeric(diaries$hourssleep),
+                 y=as.numeric(diaries$happiness)), r_ci = TRUE)
+writeLines('\nDiary Sleep duration - Energy')
+cor_apa(cor.test(x=as.numeric(diaries$hourssleep),
+                 y=as.numeric(diaries$energy)), r_ci = TRUE)
+
+writeLines('\nDiary Happiness - Energy')
+cor_apa(cor.test(x=as.numeric(diaries$happiness),
+                 y=as.numeric(diaries$energy)), r_ci = TRUE)
+
+
+writeLines('\nDiary Sleep duration - Surgency')
+cor_apa(cor.test(x=as.numeric(babies$avg.sleep),
+                 y=as.numeric(babies$SURGENCY)), r_ci = TRUE)
+        
+writeLines('\nDiary Sleep duration - Negative Affect')
+cor_apa(cor.test(x=as.numeric(babies$avg.sleep),
+                 y=as.numeric(babies$NEG_AFFECT)), r_ci = TRUE)
+        
+writeLines('\nDiary Sleep duration - Effortful Control')
+cor_apa(cor.test(x=as.numeric(babies$avg.sleep),
+                 y=as.numeric(babies$EFFORTFUL)), r_ci = TRUE)
+
+```
+
+## Linear models 
+
+```{r}
+
+#####################
+# LINEAR MODELS
+####################
+
+    #straight linear model
+    glmulti.lm.out <-
+    glmulti(hourssleep ~ relativebedtime + DaysOld + household.size +
+                sleepq.where + sleepq.routine + sleepq.day.dur.hrs + 
+                numwakes +  night.feed +
+                  diaper.type +  diaper.state + diaper.changed +
+                 + (1/SbjNum),
+              data = diaries,
+              level = 1,               # No interaction considered
+              method = "1",            # Exhaustive approach
+              crit = "aic",            # AIC as criteria
+              confsetsize = 3,         # Keep 5 best models
+              plotty = F, report = F,  # No plot or interim reports
+              fitfunction = "lm")      # lm function
+
+    ## Show 5 best models (Use @ instead of $ for an S4 object)
+    glmulti.lm.out@formulas
+    summary(glmulti.lm.out)
+
+    bestfit<-glmulti.lm.out@objects[[1]]
+    summary.lm(bestfit, data = alldata)
+    
+```
+
+```{r}
+
+simple<-lm(hourssleep ~ 1 + relativebedtime ,data = diaries)
+summary.lm(simple)
+aic(simple)
+```
+
+We haven't included any second order effects (interactions). This could get very complex. So we won't do that as it doesn't add explanatory value.
+
+Handy tool for APA format table..
+
+```{r}
+
+apa.reg.table(simple, bestfit)
+
+apa.reg.table(simple, bestfit, filename = "linear sleep dur.UK.doc" )
+  
+ 
+```
+
+## What predicts morning happiness and energy level?
+
+Finally, we look at predictors of morning mood. We will use a similar method based on linear model. but will just
+
+```{r}
+    
+glmulti.lm.out <-
+    glmulti(happiness ~ hourssleep + relativebedtime + DaysOld + household.size +
+                sleepq.where + sleepq.routine + sleepq.day.dur.hrs + 
+                numwakes +  night.feed +
+                  diaper.type +  diaper.state + diaper.changed +
+                 SURGENCY + NEG_AFFECT + EFFORTFUL + 
+               (1/SbjNum),
+              data = diaries,
+              level = 1,               # No interaction considered
+              method = "1",            # Exhaustive approach
+              crit = "aic",            # AIC as criteria
+              confsetsize = 3,         # Keep 5 best models
+              plotty = F, report = F,  # No plot or interim reports
+              fitfunction = "lm")      # lm function
+
+    ## Show 3 best models (Use @ instead of $ for an S4 object)
+    glmulti.lm.out@formulas
+    summary(glmulti.lm.out)
+
+    bestfit.happiness<-glmulti.lm.out@objects[[1]]
+    summary.lm(bestfit.happiness)
+
+```
+
+```{r}
+simple.happiness <-lm(happiness ~ 1 + hourssleep ,data = diaries)
+summary.lm(simple.happiness)
+aic(simple.happiness)
+```
+
+```{r}
+
+apa.reg.table(simple.happiness, bestfit.happiness)
+
+apa.reg.table(simple.happiness, bestfit.happiness, filename = "linear happiness UK.doc" )
+```
+
+```{r}
+    
+glmulti.lm.out <-
+    glmulti(energy ~ hourssleep + relativebedtime + DaysOld + household.size +
+                     sleepq.where + sleepq.routine + sleepq.day.dur.hrs + 
+                     numwakes +  night.feed +
+                     diaper.type +  diaper.state + diaper.changed +
+                     SURGENCY + NEG_AFFECT + EFFORTFUL + 
+                     (1/SbjNum),
+              data = diaries,
+              level = 1,               # No interaction considered
+              method = "1",            # Exhaustive approach
+              crit = "aic",            # AIC as criteria
+              confsetsize = 3,         # Keep 5 best models
+              plotty = F, report = F,  # No plot or interim reports
+              fitfunction = "lm")      # lm function
+
+    ## Show 5 best models (Use @ instead of $ for an S4 object)
+    glmulti.lm.out@formulas
+    summary(glmulti.lm.out)
+
+    bestfit.energy<-glmulti.lm.out@objects[[1]]
+    summary.lm(bestfit.energy)
+```
+
+```{r}
+simple.energy<-lm(energy ~ 1 + hourssleep ,data = diaries)
+summary.lm(simple.energy)
+aic(simple.energy)
+```
+
+```{r}
+
+apa.reg.table(simple.energy, bestfit.energy)
+
+#apa.reg.table(simple.energy, filename = "linear simple energy.doc" )
+#apa.reg.table(bestfit.energy, filename = "linear best energy.doc" )
+apa.reg.table(simple.energy,bestfit.energy, filename = "linear energy UK.doc" )
+```
+
+## 
+
+## Parent sleep and baby sleep
+
+```{r}
+
+## let's start with a quick look at all the correlations at the diary level
+cols<-c('relativebedtime','hourssleep',
+        'numwakes','happiness', 
+        'parent.happiness','parent.energy',
+        'parent.sleepquality','parent.totalwakes',
+        'parent.hourssleep')
+lbls<-c('Bed\nTime','Baby\nSleep','Num\nFeeds',
+        'Num\nWakes','Happiness','Energy', 
+        'Parent\nHappiness','Parent\nEnergy',
+        'Parent\nSleep Quality','Parent\nWakes','Parents\nSleep Efficiency',
+        'Parent\nSleep Hours','Parent\nSleep Time')
+
+
+corrgram(diaries[,cols],order=FALSE, lower.panel=panel.conf,
+         upper.panel=panel.pie, text.panel=panel.txt,
+         diag.panel= NULL,labels = lbls,
+         main="Correlations between sleep factors")
+
+
+```
+
+```{r}
+apa.cor.table(diaries[,cols],filename = "Parent sleep corrs.doc")
+```
+
+```{r}
+cor.test(diaries$parent.sleepquality, diaries$parent.totalwakes)
+
+```
+
+```{r}
+hist(babies$DaysOld)
+hist(diaries$happiness)
+hist(as.numeric(na.omit(diaries$hourssleep)))
+hist(as.numeric(na.omit(diaries$relativebedtime)))
+hist(as.numeric(na.omit(diaries$parenthourssleep)))
+
+
+## let's start with a quick look at all the correlations at the diary level
+cols<-c('relativebedtime','hourssleep','feed',
+        'numwakes','happiness','energy', 
+        'parenthappiness','parentenergy',
+        'parentsleepquality','parenttotalwakes','parentssleepefficiency',
+        'parenthourssleep','parentrelativesleeptime')
+lbls<-c('Bed\nTime','Baby\nSleep','Num\nFeeds',
+        'Num\nWakes','Happiness','Energy', 
+        'Parent\nHappiness','Parent\nEnergy',
+        'Parent\nSleep Quality','Parent\nWakes','Parents\nSleep Efficiency',
+        'Parent\nSleep Hours','Parent\nSleep Time')
+
+
+corrgram(diaries[,cols],order=FALSE, lower.panel=panel.conf,
+         upper.panel=panel.pie, text.panel=panel.txt,
+         diag.panel= NULL,labels = lbls,
+         main="Correlations between sleep factors")
+
+
+
+
+
+
+##higher level correlations
+cols<-c('DaysOld','hourssleep','relativebedtime',
+        'sleepvariations',
+        'SURGENCY','NEG_AFFECT','EFFORTFUL',
+        'energy','happiness',
+        'parentenergy','parenthappiness','parenthourssleep','parentsleepvariations')
+lbls<-c('Baby\nAge','Baby\nSleep','Bed\nTime','Sleep\nVariations',
+        'Surgency','Negative\nAffect','Effortful', 
+        'Energy','Happiness','Parent\nEnergy','Parent\nHappiness',
+        'Parent\nHours Sleep', 'Parent\nVariations')
+
+corrgram(babies[,cols],order=FALSE, lower.panel=panel.conf,
+         upper.panel=panel.pie, text.panel=panel.txt,
+         diag.panel= NULL,labels = lbls,
+         main="Grand average correlations")
+
+
+#break down of averages per condition
+aggregate(hourssleep ~ product * week, diaries,mean)
+aggregate(happiness ~ product * week, diaries,mean)
+aggregate(energy ~ product * week, diaries,mean)
+
+aggregate(hourssleep ~ week, diaries,mean)
+aggregate(happiness ~ week,  diaries,mean)
+aggregate(energy ~ week,     diaries,mean)
+
+aggregate(hourssleep ~ product, diaries,mean)
+aggregate(happiness ~ product,  diaries,mean)
+aggregate(energy ~ product,     diaries,mean)
+
+#aggregate(sleepvariations ~ product,     diaries,mean)
+
+
+##are these significant?
+h1 <- diaries %>% filter(!is.na(hourssleep))  %>% group_by(Resp_id,week) %>% select(Resp_id,week,product,hourssleep)  %>% summarise(product=first(product),avsleep=mean(hourssleep))
+h1 <-data.frame(h1)
+ezANOVA(h1,dv=avsleep,wid=.(Resp_id),within = .(product))
+
+h1 <- diaries %>% filter(!is.na(happiness))  %>% group_by(Resp_id,week) %>% select(Resp_id,product,happiness)  %>% summarise(product=first(product),avhappiness=mean(happiness))
+h1 <-data.frame(h1)
+ezANOVA(h1,dv=avhappiness,wid=.(Resp_id),within = .(product))
+
+h1 <- diaries %>% filter(!is.na(energy))  %>% group_by(Resp_id,week) %>% select(Resp_id,product,energy)  %>% summarise(product=first(product),avenergy=mean(energy))
+h1 <-data.frame(h1)
+ezANOVA(h1,dv=avenergy,wid=.(Resp_id),within = .(product))
+
+
+table(diaries$diary.Q10_1, diaries$product )
+table(diaries$diary.Q10_2, diaries$product )
+table(diaries$diary.Q10_3, diaries$product )
+table(diaries$diary.Q10_4, diaries$product )
+
+
+sleeplm<-lm(hourssleep ~ product + (1/Resp_id),data=diaries)
+summary.lm(sleeplm)
+
+happylm<-lm(happiness ~ product + (1/Resp_id),data=diaries)
+summary.lm(happylm)
+
+energylm<-lm(energy ~ product + (1/Resp_id),data=diaries)
+summary.lm(energylm)
+
+
+
+
+##################
+## GRAPHS
+##################
+theme_set(theme_few(base_size = 18))
+
+ggplot(diaries, aes(product,energy )) + stat_boxplot()
+
+ggplot(diaries,aes(hourssleep,happiness)) +
+  aes(color=as.factor(product)) +
+  geom_smooth(method=lm,size=1.5) +
+  facet_grid(.~product) + 
+  xlab("Hours of sleep") + ylab("Happiness score") +
+  theme(legend.position = "none")
+
+ggplot(diaries,aes(hourssleep,energy)) +
+  aes(color=as.factor(product)) +
+  geom_smooth(method=lm,size=1.5) +
+  facet_grid(.~product) + 
+  xlab("Hours of sleep") + ylab("Energy score") +
+  theme(legend.position = "none")
+
+
+bed.lm <-lm(hourssleep ~ 1 + relativebedtime+ (1/Resp_id), 
+            data = diaries)
+summary(bed.lm)
+
+
+glmulti.lm.out <-
+  glmulti(hourssleep ~ DaysOld  +relativebedtime + product + numwakes +  feed  + changed + (1/Resp_id),
+          data = diaries,
+          level = 1,               # No interaction considered
+          method ="g",             # "h" = Exhaustive approach, "l" = fast branch bound
+          crit = "aic",            # AIC as criteria
+          confsetsize = 5,         # Keep 5 best models
+          plotty = F, report = F,  # No plot or interim reports
+          fitfunction = "lm")      # lm function
+
+## Show 5 best models (Use @ instead of $ for an S4 object)
+glmulti.lm.out@formulas
+summary(glmulti.lm.out@objects[[1]])
+
+
+glmulti.lm.out <-
+  glmulti(happiness ~ DaysOld  +relativebedtime + product + numwakes +  feed  + changed + (1/Resp_id),
+          data = diaries,
+          level = 2,               # No interaction considered
+          method ="g",             # "h" = Exhaustive approach, "l" = fast branch bound
+          crit = "aic",            # AIC as criteria
+          confsetsize = 5,         # Keep 5 best models
+          plotty = F, report = F,  # No plot or interim reports
+          fitfunction = "lm")      # lm function
+
+## Show 5 best models (Use @ instead of $ for an S4 object)
+glmulti.lm.out@formulas
+summary(glmulti.lm.out@objects[[1]])
+
+
+glhappiness <-
+  glmulti(happiness ~ DaysOld  + hourssleep + product + numwakes +  feed + diaperstate + changed + (1/Resp_id),
+          data = diaries,
+          level = 1,               # No interaction considered
+          method = "1",            # Exhaustive approach
+          crit = "aic",            # AIC as criteria
+          confsetsize = 5,         # Keep 5 best models
+          plotty = F, report = F,  # No plot or interim reports
+          fitfunction = "lm")      # lm function
+
+## Show 5 best models (Use @ instead of $ for an S4 object)
+glhappiness@formulas
+summary(glhappiness@objects[[1]])
+
+glenergy <-
+  glmulti(energy ~ DaysOld  + hourssleep + product + numwakes +  feed + diaperstate + changed + (1/Resp_id),
+          data = diaries,
+          level = 1,               # No interaction considered
+          method = "1",            # Exhaustive approach
+          crit = "aic",            # AIC as criteria
+          confsetsize = 5,         # Keep 5 best models
+          plotty = F, report = F,  # No plot or interim reports
+          fitfunction = "lm")      # lm function
+
+## Show 5 best models (Use @ instead of $ for an S4 object)
+glenergy@formulas
+summary(glenergy@objects[[1]])
+
+
+ggplot(diaries,aes(energy~diaperstate)) +
+  aes(color=as.factor(diaperstate)) +
+  facet_grid(.~product) + 
+  xlab("Hours of sleep") + ylab("Energy score") +
+  theme(legend.position = "none")
+
+aggregate(happiness ~ diaperstate , diaries,mean)
+
+
+###########################################
+## BRASIL STYLE DIAGRAMS
+###########################################
+
+g1<-ggplot(diaries,aes(hourssleep))
+(g1+geom_density()
++ aes(fill=as.factor(product))
++ geom_density(alpha=.3)
++ xlim(c(4,14))
++ xlab("Hours sleep per night")
++ ggtitle("Average hours sleep")
++ facet_grid(product~.) 
++ theme(legend.position = "none",
+        strip.text.y=element_text(size = 24),
+        axis.title.y=element_blank(),
+        axis.ticks = element_blank(), 
+        axis.text.y = element_blank(),
+        axis.text=element_text(size=24),
+        axis.title=element_text(size=18))
+)
+
+(ggplot(diaries,aes(happiness))
++ geom_histogram(stat="count", bins )
++ ggtitle("Happiness")
++ aes(fill=as.factor(product))
++ geom_density(alpha=.3)
++ xlim(c(1,10))
++ xlab("Happiness")
++ facet_grid(product~.) 
++ theme(legend.position = "none",
+        strip.text.y=element_text(size = 24),
+        axis.title.y=element_blank(),
+        axis.ticks = element_blank(), 
+        axis.text.y = element_blank(),
+        axis.text=element_text(size=24),
+        axis.title=element_text(size=18)))
+
+
+
+(ggplot(diaries,aes(energy))
++ geom_density()
++ ggtitle("Energy")
++ aes(fill=as.factor(product))
++ geom_density(alpha=.3)
++ xlim(c(1,10))
++ xlab("Energy")
++ facet_grid(product~.) 
++ theme(legend.position = "none",
+        strip.text.y=element_text(size = 24),
+        axis.title.y=element_blank(),
+        axis.ticks = element_blank(), 
+        axis.text.y = element_blank(),
+        axis.text=element_text(size=24),
+        axis.title=element_text(size=18))
+)
+
+
+
+ggplot(diaries,aes(relativebedtime,hourssleep)) +
+  geom_jitter() +
+  geom_smooth(method=lm) +
+  scale_x_continuous(breaks = c(6,8,10,12), labels=c("6" = "6 PM", "8" = "8 PM","10"= "10 PM","12" = "12 AM")) +
+  ylab("Hours of sleep") + xlab("Bedtime") +
+  theme(legend.position = "none")
+cor.test(diaries$hourssleep,diaries$relativebedtime,use = "pairwise.complete.obs")
+
+
+
+ggplot(diaries,aes(hourssleep,parenthourssleep)) +
+  geom_jitter() +
+  geom_smooth(method=lm) +
+  ylab("Parent hours of sleep") + xlab("Baby hours of sleep") +
+  theme(legend.position = "none")
+cor.test(diaries$hourssleep,diaries$parenthourssleep,use = "pairwise.complete.obs")
+
+
+ggplot(diaries,aes(numwakes,parentsleepquality)) +
+  geom_jitter() +
+  geom_smooth(method=lm) +
+  ylab("Parent Sleep Quality") + xlab("Baby wakes per night") +
+  theme(legend.position = "none")
+cor.test(diaries$numwakes,diaries$parentsleepquality,use = "pairwise.complete.obs")
+
+
+  
+h2 <- diaries %>% filter(!is.na(diary.Q9) & diary.Q9>0)  
+(ggplot(diaries,aes(x=happiness))+stat_bin(binwidth = 1,origin=0)
+ + facet_grid(diary.Q9~.)
+ + ggtitle("Happiness vs wetness"))
+
+(ggplot(diaries,aes(x=energy))+stat_bin(binwidth = 1,origin=0)
++ facet_grid(diary.Q9~.)
++ ggtitle("Energy vs wetness"))
+
+theme_set(theme_few(base_size = 18))
+### 1 ###
+#how happy was your baby
+diaries$over8<-ifelse(diaries$happiness>7,"blue","skyblue")
+table(diaries$over8)
+ggplot(diaries,aes(happiness, fill = over8)) +
+  scale_x_discrete(limits=1:10) +
+  geom_bar(binwidth=1,origin=0.5) +
+  xlab("Happiness") +
+  ggtitle("On a scale of 1 to 10 how happy\n was your baby this morning?") +
+  annotate("text",x=9,y=140,label="64%",size =18) +
+  theme(legend.position = "none",
+        strip.text.y=element_text(size = 24),
+        axis.title.y=element_blank(),
+        axis.ticks = element_blank(), 
+        axis.text.y = element_blank(),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18))
+
+#how energetic.
+diaries$over82<-ifelse(diaries$energy>7,"blue","skyblue")
+t(table(diaries$over82))
+t(table(diaries$energy))
+write.csv(table(diaries$energy),"energy.csv")
+ggplot(diaries,aes(energy, fill = over82)) +
+  scale_x_discrete(limits=1:10) +
+  geom_bar(binwidth=1,origin=0.5) +
+  xlab("Energy") +
+  ggtitle("On a scale of 1 to 10 how energetic\n was your baby this morning?") +
+  annotate("text",x=9,y=95,label="57%",size =18) +
+  theme(legend.position = "none",
+        strip.text.y=element_text(size = 24),
+        axis.title.y=element_blank(),
+        axis.ticks = element_blank(), 
+        axis.text.y = element_blank(),
+        axis.text=element_text(size=18),
+        axis.title=element_text(size=18))
+
+```

@@ -1,0 +1,89 @@
+---
+title: "Baby Sleep Diary - R Libraries"
+author: "Caspar Addyman"
+date: "18/03/2021"
+output: html_document
+---
+
+# Baby Sleep Diary - R Library requirements
+
+This notebook sets up the `R` environment and packages to run analyses and compile the paper for sleep diary studies run in Sao Paulo, Brazil and the United Kingdom. Studies were conducted by Caspar Addyman [c.addyman\@gold.ac.uk](mailto:c.addyman@gold.ac.uk) in collaboration with Procter & Gamble.
+
+## Files for dealing with RMarkdown
+
+As we've put code into Rmd files we need to let R know how to parse and interpret these. Installing the `rmarkdown` package should be sufficient.
+
+```{r rmd}
+install.packages("rmarkdown")
+library(rmarkdown)
+```
+
+```{}
+```
+
+## Some standard parameters for formatting outputs
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 3)
+na.omit = TRUE
+```
+
+## Set a checkpoint date for reproducibility
+
+We use `checkpoint` to fix all library versions to the MRAN snapshot for 1st March 2021.
+
+The base version of R used was R-4.0.4
+
+Note: The package `glmulti` depends on `rJava` which can be [quite fiddly to install](https://cimentadaj.github.io/blog/2018-05-25-installing-rjava-on-windows-10/installing-rjava-on-windows-10/).
+
+```{r checkpoint, include = TRUE}
+#first let's fix the snapshot date for all packages we will use as 1st March 2021
+library(checkpoint)
+checkpoint(snapshotDate = "2021-03-01", 
+           R.version = "4.0.4", 
+           use.knitr = TRUE, 
+           auto.install.knitr = TRUE)
+
+
+```
+
+## R Libraries
+
+These are all the libraries we use (I think!)
+
+First, we run a script that installs all the libraries. (We keep this separate for using this code on remote servers, like myBinder)
+
+```{r installr}
+source('install.R)
+```
+
+Then we check we can load them
+
+```{r  libraries}
+
+library(tidyverse)
+library(lubridate)
+library(foreign)
+library(haven)
+library(expss)
+library(ggthemes)
+library(corrgram)
+library(gridExtra)
+library(leaps)
+library(MASS)
+library(rJava)
+library(glmulti)
+library(hms)
+library(Hmisc)
+library(apa)
+
+```
+
+## [Optional] Creating Jupyter .ipynb files
+
+In this directory there are synchronised RMarkdown (`.Rmd`) and Jupyter (`.ipynb`) versions of all the markdown document. We create the Jupyter versions by using the python package [`notedown`](https://github.com/aaren/notedown) with the following command:
+
+    notedown input.Rmd --knit > output.ipynb
+
+I will add more instructions on this when i understand it better myself!
