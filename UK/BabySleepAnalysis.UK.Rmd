@@ -768,6 +768,36 @@ cor.test(diaries$parent.sleepquality, diaries$parent.totalwakes)
 ```
 
 ```{r}
+
+corr.p<-function(x, y){
+  #run correlation of x & y and return p-value
+  cr <- cor.test(x,y)
+  return (cr$p.value)
+}
+
+```
+
+```{r}
+
+
+for (i in 1:length(cols)){
+  for (j in 1:length(cols)){
+      if(j<i){
+    #    print(paste(i,j))
+        cr <- corr.p(diaries[,cols[i]],diaries[,cols[j]])
+        print(paste(cols[i],cols[j],cr))
+      }
+  }
+  
+}
+  
+```
+
+## Exploratory Analysis
+
+(Not in the submitted paper. )
+
+```{r}
 hist(babies$DaysOld)
 hist(diaries$happiness)
 hist(as.numeric(na.omit(diaries$hourssleep)))
@@ -775,23 +805,7 @@ hist(as.numeric(na.omit(diaries$relativebedtime)))
 hist(as.numeric(na.omit(diaries$parenthourssleep)))
 
 
-## let's start with a quick look at all the correlations at the diary level
-cols<-c('relativebedtime','hourssleep','feed',
-        'numwakes','happiness','energy', 
-        'parenthappiness','parentenergy',
-        'parentsleepquality','parenttotalwakes','parentssleepefficiency',
-        'parenthourssleep','parentrelativesleeptime')
-lbls<-c('Bed\nTime','Baby\nSleep','Num\nFeeds',
-        'Num\nWakes','Happiness','Energy', 
-        'Parent\nHappiness','Parent\nEnergy',
-        'Parent\nSleep Quality','Parent\nWakes','Parents\nSleep Efficiency',
-        'Parent\nSleep Hours','Parent\nSleep Time')
 
-
-corrgram(diaries[,cols],order=FALSE, lower.panel=panel.conf,
-         upper.panel=panel.pie, text.panel=panel.txt,
-         diag.panel= NULL,labels = lbls,
-         main="Correlations between sleep factors")
 
 
 
